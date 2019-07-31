@@ -22,11 +22,12 @@ type
       procedure CNDrawItem(var Message: TWMDrawItem); message CN_DRAWITEM;
       procedure WMLButtonDblClk(var Message: TWMLButtonDblClk); message WM_LBUTTONDBLCLK;
       procedure DrawButtonText(const Caption: string; TRC: TRect; IsDisable: Boolean; BiDiFlags: Longint);
-      procedure CalcuateTextPosition(const Caption: string; var TRC: TRect; BiDiFlags: Longint);
+      procedure CalcuateTextPosition(const Caption: string; var TRC: TRect; BiDiFlags: Longint; IsDisable: Boolean);
       procedure SetRound(const Value: Integer);
       procedure SetDisableColor(const Value: TColor);
       procedure SetHoverColor(const Value: TColor);
       procedure SetParentColor(const Value: Boolean);
+      function GetIcon(IsDisable: Boolean): TBitmap;
    protected
       procedure CreateParams(var Params: TCreateParams); override;
       procedure WndProc(var Message: TMessage); override;
@@ -130,9 +131,11 @@ begin
    Message.Result := 1;
 end;
 
-procedure TColorBtn.CalcuateTextPosition(const Caption: string; var TRC: TRect; BiDiFlags: Integer);
+procedure TColorBtn.CalcuateTextPosition(const Caption: string; var TRC: TRect;
+   BiDiFlags: Integer; IsDisable: Boolean);
 var
    TB: TRect;
+   xGlyph: TBitmap;
    xLeft, xRight, xTop, xBottom: Integer;
 begin
    with FCanvas do
@@ -145,73 +148,75 @@ begin
       xTop := 0;
       xBottom := 0;
 
-      if (Glyph.Width > 0) or
-         (Glyph.Height > 0) then
+      xGlyph := GetIcon(IsDisable);
+
+      if (xGlyph.Width > 0) or
+         (xGlyph.Height > 0) then
       begin
-         Glyph.Transparent := True;
+         xGlyph.Transparent := True;
 
          case Layout of
             blGlyphLeft:
                begin
-                  xLeft := Glyph.Width + TB.Right + 3;
-                  xTop  := ((TRC.Bottom - TRC.Top) - Glyph.Height) div 2;
+                  xLeft := xGlyph.Width + TB.Right + 3;
+                  xTop  := ((TRC.Bottom - TRC.Top) - xGlyph.Height) div 2;
 
                   if Margin = -1 then
                      xLeft := ((TRC.Right - TRC.Left) - xLeft) div 2
                   else
                      xLeft := Margin + 3;
 
-                  FCanvas.Draw(xLeft, xTop, Glyph);
-                  xLeft := xLeft + 4 + Glyph.Width;
+                  FCanvas.Draw(xLeft, xTop, xGlyph);
+                  xLeft := xLeft + 4 + xGlyph.Width;
                   xTop  := ((TRC.Bottom - TRC.Top) - TB.Bottom) div 2;
                end;
             blGlyphRight:
                begin
-                  xRight  := Glyph.Width + TB.Right + 3;
-                  xBottom := ((TRC.Bottom - TRC.Top) - Glyph.Height) div 2;
+                  xRight  := xGlyph.Width + TB.Right + 3;
+                  xBottom := ((TRC.Bottom - TRC.Top) - xGlyph.Height) div 2;
 
                   if Margin = -1 then
                   begin
                      xRight := ((TRC.Right - TRC.Left) - xRight) div 2;
-                     xRight := TRC.Right - (xRight + Glyph.Width);
+                     xRight := TRC.Right - (xRight + xGlyph.Width);
                   end
                   else
-                     xRight := TRC.Right - (Margin + Glyph.Width);
+                     xRight := TRC.Right - (Margin + xGlyph.Width);
 
-                  FCanvas.Draw(xRight, xBottom, Glyph);
+                  FCanvas.Draw(xRight, xBottom, xGlyph);
                   xRight  := xRight - 4 - TB.Right;
                   xBottom := ((TRC.Bottom - TRC.Top) - TB.Bottom) div 2;
                end;
             blGlyphTop:
                begin
-                  xTop := Glyph.Height + TB.Bottom + 3;
+                  xTop := xGlyph.Height + TB.Bottom + 3;
 
                   if Margin = -1 then
                      xTop := ((TRC.Bottom - TRC.Top) - xTop) div 2
                   else
                      xTop := Margin + 3;
 
-                  xLeft := ((TRC.Right - TRC.Left) - Glyph.Width) div 2;
+                  xLeft := ((TRC.Right - TRC.Left) - xGlyph.Width) div 2;
 
-                  FCanvas.Draw(xLeft, xTop, Glyph);
-                  xTop := xTop + 4 + Glyph.Height;
+                  FCanvas.Draw(xLeft, xTop, xGlyph);
+                  xTop := xTop + 4 + xGlyph.Height;
                   xLeft := ((TRC.Right - TRC.Left) - TB.Right) div 2;
                end;
             blGlyphBottom:
                begin
-                  xBottom := Glyph.Height + TB.Bottom + 3;
+                  xBottom := xGlyph.Height + TB.Bottom + 3;
 
                   if Margin = -1 then
                   begin
                      xBottom := ((TRC.Bottom - TRC.Top) - xBottom) div 2;
-                     xBottom := TRC.Bottom - (xBottom + Glyph.Height);
+                     xBottom := TRC.Bottom - (xBottom + xGlyph.Height);
                   end
                   else
-                     xBottom := TRC.Bottom - (Margin + Glyph.Height);
+                     xBottom := TRC.Bottom - (Margin + xGlyph.Height);
 
-                  xRight := ((TRC.Right - TRC.Left) - Glyph.Width) div 2;
+                  xRight := ((TRC.Right - TRC.Left) - xGlyph.Width) div 2;
 
-                  FCanvas.Draw(xRight, xBottom, Glyph);
+                  FCanvas.Draw(xRight, xBottom, xGlyph);
                   xBottom := xBottom - 4 - TB.Bottom;
                   xRight := ((TRC.Right - TRC.Left) - TB.Right) div 2;
                end;
@@ -232,17 +237,32 @@ procedure TColorBtn.DrawButtonText(const Caption: string; TRC: TRect; IsDisable:
 begin
    with FCanvas do
    begin
-      CalcuateTextPosition(Caption, TRC, BiDiFlags);
+      CalcuateTextPosition(Caption, TRC, BiDiFlags, IsDisable);
       Brush.Style := bsClear;
 
       if IsDisable then
-      begin
-         OffsetRect(TRC, -1, -1);
          Font.Color := FDisableColor;
-      end;
 
       DrawText(Handle, PChar(Caption), Length(Caption), TRC, DT_CENTER or DT_VCENTER or BiDiFlags);
    end;
+end;
+
+function TColorBtn.GetIcon(IsDisable: Boolean): TBitmap;
+var
+   xRect,
+   xCutRect: TRect;
+begin
+   Result := TBitmap.Create;
+   Result.Height := Glyph.Height;
+   Result.Width  := Trunc(Glyph.Width / NumGlyphs);
+
+   if IsDisable then
+      xRect := Bounds(Result.Width, 0, Result.Width, Result.Height)
+   else
+      xRect := Bounds(0, 0, Result.Width, Result.Height);
+
+   xCutRect := Bounds(0, 0, Result.Width, Result.Height);
+   Result.Canvas.CopyRect(xCutRect, Glyph.Canvas, xRect);
 end;
 
 procedure Register;
