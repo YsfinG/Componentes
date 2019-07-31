@@ -7,7 +7,7 @@ uses
    StdCtrls, Buttons;
 
 type
-   TColorBtn = class(TButton)
+   TColorBtn = class(TBitBtn)
    private
       FOldColor: TColor;
    private
@@ -30,17 +30,17 @@ type
    protected
       procedure CreateParams(var Params: TCreateParams); override;
       procedure WndProc(var Message: TMessage); override;
-      procedure SetButtonStyle(ADefault: boolean); override;   
+      procedure SetButtonStyle(ADefault: boolean); override;
       procedure DrawButton(Rect: TRect; State: UINT);
    public
       constructor Create(AOwner: TComponent); override;
       destructor Destroy; override;
    published
       property Color: TColor read FColor write SetColor default clBtnFace;
-      property Round: Integer read FRound write SetRound;
-      property DisableColor: TColor read FDisableColor write SetDisableColor;
-      property HoverColor: TColor read FHoverColor write SetHoverColor;
-      property ParentColor: Boolean read FParentColor write SetParentColor;
+      property Round: Integer read FRound write SetRound default 0;
+      property DisableColor: TColor read FDisableColor write SetDisableColor default clBtnShadow;
+      property HoverColor: TColor read FHoverColor write SetHoverColor default clBtnHighlight;
+      property ParentColor: Boolean read FParentColor write SetParentColor default True;
    end;
 
 procedure Register;
@@ -77,6 +77,7 @@ begin
    if FColor <> Value then
    begin
       FColor := Value;
+      FParentColor := False;
       Invalidate;
    end;
 end;
@@ -132,16 +133,95 @@ end;
 procedure TColorBtn.CalcuateTextPosition(const Caption: string; var TRC: TRect; BiDiFlags: Integer);
 var
    TB: TRect;
-   TS, TP: TPoint;
+   xLeft, xRight, xTop, xBottom: Integer;
 begin
    with FCanvas do
    begin
       TB := Rect(0, 0, TRC.Right + TRC.Left, TRC.Top + TRC.Bottom);
       DrawText(Handle, PChar(Caption), Length(Caption), TB, DT_CALCRECT or BiDiFlags);
-      TS := Point(TB.Right - TB.Left, TB.Bottom - TB.Top);
-      TP.X := ((TRC.Right - TRC.Left) - TS.X + 1) div 2;
-      TP.Y := ((TRC.Bottom - TRC.Top) - TS.Y + 1) div 2;
-      OffsetRect(TB, TP.X + TRC.Left, TP.Y + TRC.Top);
+
+      xLeft := 0;
+      xRight := 0;
+      xTop := 0;
+      xBottom := 0;
+
+      if (Glyph.Width > 0) or
+         (Glyph.Height > 0) then
+      begin
+         Glyph.Transparent := True;
+
+         case Layout of
+            blGlyphLeft:
+               begin
+                  xLeft := Glyph.Width + TB.Right + 3;
+
+                  if Margin = -1 then
+                     xLeft := ((TRC.Right - TRC.Left) - xLeft) div 2
+                  else
+                     xLeft := Margin + 3;
+
+                  FCanvas.Draw(xLeft, 0, Glyph);
+                  xLeft := xLeft + 4 + Glyph.Width;
+                  xTop  := ((TRC.Bottom - TRC.Top) - TB.Bottom) div 2;
+               end;
+            blGlyphRight:
+               begin
+                  xRight := Glyph.Width + TB.Right + 3;
+
+                  if Margin = -1 then
+                  begin
+                     xRight := ((TRC.Right - TRC.Left) - xRight) div 2;
+                     xRight := TRC.Right - (xRight + Glyph.Width);
+                  end
+                  else
+                     xRight := TRC.Right - (Margin + Glyph.Width);
+
+                  FCanvas.Draw(xRight, 0, Glyph);
+                  xRight  := xRight - 4 - TB.Right;
+                  xBottom := ((TRC.Bottom - TRC.Top) - TB.Bottom) div 2;
+               end;
+            blGlyphTop:
+               begin
+                  xTop := Glyph.Height + TB.Bottom + 3;
+
+                  if Margin = -1 then
+                     xTop := ((TRC.Bottom - TRC.Top) - xTop) div 2
+                  else
+                     xTop := Margin + 3;
+
+                  xLeft := ((TRC.Right - TRC.Left) - Glyph.Width) div 2;
+
+                  FCanvas.Draw(xLeft, xTop, Glyph);
+                  xTop := xTop + 4 + Glyph.Height;
+                  xLeft := ((TRC.Right - TRC.Left) - TB.Right) div 2;
+               end;
+            blGlyphBottom:
+               begin
+                  xBottom := Glyph.Height + TB.Bottom + 3;
+
+                  if Margin = -1 then
+                  begin
+                     xBottom := ((TRC.Bottom - TRC.Top) - xBottom) div 2;
+                     xBottom := TRC.Bottom - (xBottom + Glyph.Height);
+                  end
+                  else
+                     xBottom := TRC.Bottom - (Margin + Glyph.Height);
+
+                  xRight := ((TRC.Right - TRC.Left) - Glyph.Width) div 2;
+
+                  FCanvas.Draw(xRight, xBottom, Glyph);
+                  xBottom := xBottom - 4 - TB.Bottom;
+                  xRight := ((TRC.Right - TRC.Left) - TB.Right) div 2;
+               end;
+         end;
+      end
+      else
+      begin
+         xLeft := ((TRC.Right - TRC.Left) - TB.Right) div 2;
+         xTop  := ((TRC.Bottom - TRC.Top) - TB.Bottom) div 2;
+      end;
+
+      OffsetRect(TB, xLeft + xRight + 1, xTop + xBottom);
       TRC := TB;
    end;
 end;
@@ -152,14 +232,14 @@ begin
    begin
       CalcuateTextPosition(Caption, TRC, BiDiFlags);
       Brush.Style := bsClear;
+
       if IsDisable then
       begin
          OffsetRect(TRC, -1, -1);
          Font.Color := FDisableColor;
-         DrawText(Handle, PChar(Caption), Length(Caption), TRC, DT_CENTER or DT_VCENTER or BiDiFlags);
-      end
-      else
-         DrawText(Handle, PChar(Caption), Length(Caption), TRC, DT_CENTER or DT_VCENTER or BiDiFlags);
+      end;
+
+      DrawText(Handle, PChar(Caption), Length(Caption), TRC, DT_CENTER or DT_VCENTER or BiDiFlags);
    end;
 end;
 
@@ -169,7 +249,7 @@ begin
 end;
 
 procedure TColorBtn.WndProc(var Message: TMessage);
-begin     
+begin
    if (Message.Msg = CM_MOUSELEAVE) then
    begin
       FColor := FOldColor;
@@ -186,7 +266,7 @@ begin
 end;
 
 procedure TColorBtn.SetDisableColor(const Value: TColor);
-begin       
+begin
    if FDisableColor <> Value then
    begin
       FDisableColor := Value;
@@ -198,8 +278,7 @@ procedure TColorBtn.SetHoverColor(const Value: TColor);
 begin
    if FHoverColor <> Value then
    begin
-      FHoverColor  := Value;
-      FParentColor := False;
+      FHoverColor := Value;
       Invalidate;
    end;
 end;
@@ -209,6 +288,10 @@ begin
    if FParentColor <> Value then
    begin
       FParentColor := Value;
+
+      if FParentColor and (Parent <> Nil) then
+         FColor := Parent.Brush.Color;
+
       Invalidate;
    end;
 end;
@@ -246,21 +329,21 @@ begin
    OldColor := FCanvas.Brush.Color;
 
    if IsDisabled then
-   begin                                                                                                                                                                                                                                      
+   begin
       FCanvas.Brush.Color := Parent.Brush.Color;
-      FCanvas.Pen.Color   := FDisableColor;
+      FCanvas.Pen.Color := FDisableColor;
    end
    else
-   begin                                             
+   begin
       if FParentColor and (FColor <> FHoverColor) then
       begin
          FCanvas.Brush.Color := Parent.Brush.Color;
-         FCanvas.Pen.Color   := Parent.Brush.Color;
+         FCanvas.Pen.Color := Parent.Brush.Color;
       end
       else
       begin
          FCanvas.Brush.Color := FColor;
-         FCanvas.Pen.Color   := FColor;
+         FCanvas.Pen.Color := FColor;
       end;
    end;
 
@@ -269,6 +352,7 @@ begin
    OldMode := SetBkMode(FCanvas.Handle, TRANSPARENT);
 
    FCanvas.Font := Self.Font;
+
    DrawButtonText(Caption, OrgRect, IsDisabled, 0);
 
    SetBkMode(FCanvas.Handle, OldMode);
@@ -279,17 +363,16 @@ begin
       InflateRect(Rect, -1, -1);
       FCanvas.Pen.Color := clWindowFrame;
       FCanvas.Brush.Style := bsClear;
-      FCanvas.RoundRect(Rect.Left,Rect.Top,Rect.Right,Rect.Bottom,FRound,FRound);
+      FCanvas.RoundRect(Rect.Left, Rect.Top, Rect.Right, Rect.Bottom, FRound, FRound);
       InflateRect(Rect, 0, 0);
    end
-   else
-   if IsDisabled then
+   else if IsDisabled then
    begin
       Rect := OrgRect;
       InflateRect(Rect, -1, -1);
       FCanvas.Pen.Color := clSilver;
       FCanvas.Brush.Style := bsClear;
-      FCanvas.RoundRect(Rect.Left,Rect.Top,Rect.Right,Rect.Bottom,FRound,FRound);
+      FCanvas.RoundRect(Rect.Left, Rect.Top, Rect.Right, Rect.Bottom, FRound, FRound);
       InflateRect(Rect, 0, 0);
    end;
 end;
