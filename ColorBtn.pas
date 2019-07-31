@@ -154,19 +154,21 @@ begin
             blGlyphLeft:
                begin
                   xLeft := Glyph.Width + TB.Right + 3;
+                  xTop  := ((TRC.Bottom - TRC.Top) - Glyph.Height) div 2;
 
                   if Margin = -1 then
                      xLeft := ((TRC.Right - TRC.Left) - xLeft) div 2
                   else
                      xLeft := Margin + 3;
 
-                  FCanvas.Draw(xLeft, 0, Glyph);
+                  FCanvas.Draw(xLeft, xTop, Glyph);
                   xLeft := xLeft + 4 + Glyph.Width;
                   xTop  := ((TRC.Bottom - TRC.Top) - TB.Bottom) div 2;
                end;
             blGlyphRight:
                begin
-                  xRight := Glyph.Width + TB.Right + 3;
+                  xRight  := Glyph.Width + TB.Right + 3;
+                  xBottom := ((TRC.Bottom - TRC.Top) - Glyph.Height) div 2;
 
                   if Margin = -1 then
                   begin
@@ -176,7 +178,7 @@ begin
                   else
                      xRight := TRC.Right - (Margin + Glyph.Width);
 
-                  FCanvas.Draw(xRight, 0, Glyph);
+                  FCanvas.Draw(xRight, xBottom, Glyph);
                   xRight  := xRight - 4 - TB.Right;
                   xBottom := ((TRC.Bottom - TRC.Top) - TB.Bottom) div 2;
                end;
