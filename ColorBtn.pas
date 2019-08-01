@@ -4,35 +4,39 @@ interface
 
 uses
    Windows, Messages, SysUtils, Classes, Graphics, Controls, Forms, Dialogs,
-   StdCtrls, Buttons;
+   StdCtrls, Buttons, HSLColor;
 
 type
    TColorBtn = class(TBitBtn)
    private
-      FOldColor: TColor;
-   private
-      IsFocused: boolean;
       FCanvas: TCanvas;
       FColor: TColor;
       FRound: Integer;
       FDisableColor: TColor;
       FHoverColor: TColor;
       FParentColor: Boolean;
-      procedure SetColor(Value: TColor);
+      FActualColor: TColor;
+      function InvertColor(const Color: TColor): TColor;
+      function ColorIsLight(Color: TColor): Boolean;
+      function LuminanceColor(Color: TColor; Level: Integer): TColor;
+      function GetIcon(IsDisable: Boolean): TBitmap;     
       procedure CNDrawItem(var Message: TWMDrawItem); message CN_DRAWITEM;
       procedure WMLButtonDblClk(var Message: TWMLButtonDblClk); message WM_LBUTTONDBLCLK;
       procedure DrawButtonText(const Caption: string; TRC: TRect; IsDisable: Boolean; BiDiFlags: Longint);
       procedure CalcuateTextPosition(const Caption: string; var TRC: TRect; BiDiFlags: Longint; IsDisable: Boolean);
+   private             
+      IsFocused: boolean;
+      procedure SetColor(Value: TColor);
       procedure SetRound(const Value: Integer);
       procedure SetDisableColor(const Value: TColor);
-      procedure SetHoverColor(const Value: TColor);
-      procedure SetParentColor(const Value: Boolean);
-      function GetIcon(IsDisable: Boolean): TBitmap;
+      procedure SetParentColor(const Value: Boolean);   
+      function GetHoverColor: TColor;
    protected
       procedure CreateParams(var Params: TCreateParams); override;
       procedure WndProc(var Message: TMessage); override;
       procedure SetButtonStyle(ADefault: boolean); override;
       procedure DrawButton(Rect: TRect; State: UINT);
+      property HoverColor: TColor read GetHoverColor;
    public
       constructor Create(AOwner: TComponent); override;
       destructor Destroy; override;
@@ -40,7 +44,6 @@ type
       property Color: TColor read FColor write SetColor default clBtnFace;
       property Round: Integer read FRound write SetRound default 0;
       property DisableColor: TColor read FDisableColor write SetDisableColor default clBtnShadow;
-      property HoverColor: TColor read FHoverColor write SetHoverColor default clBtnHighlight;
       property ParentColor: Boolean read FParentColor write SetParentColor default True;
    end;
 
@@ -48,16 +51,50 @@ procedure Register;
 
 implementation
 
-{ TColorBtn }
+{ TColorBtn }  
+
+function TColorBtn.InvertColor(const Color: TColor): TColor;
+begin
+    Result :=
+       TColor(
+          Windows.RGB(
+             255 - GetRValue(Color),
+             255 - GetGValue(Color),
+             255 - GetBValue(Color)));
+end;        
+
+function TColorBtn.ColorIsLight(Color: TColor): Boolean;
+begin
+   Color := ColorToRGB(Color);
+   Result :=
+      ((Color and $FF) +
+       (Color shr 8 and $FF) +
+       (Color shr 16 and $FF)) >= $180;
+end;
+
+function TColorBtn.LuminanceColor(Color: TColor; Level: Integer): TColor;
+var
+   xHSL: THSL;
+begin
+   xHSL := ColorToHSLWindow(Color);
+
+   if ColorIsLight(Color) then
+      xHSL.Lightness := xHSL.Lightness - Level
+   else
+      xHSL.Lightness := xHSL.Lightness + Level;
+
+   Result := HSLWindowToColor(xHSL);
+end;
 
 constructor TColorBtn.Create(AOwner: TComponent);
 begin
    inherited Create(AOwner);
    FCanvas := TCanvas.Create;
    FColor := clBtnFace;
+   FActualColor := clBtnFace;
+   GetHoverColor;
    FDisableColor := clBtnShadow;
    FParentColor := True;
-   FHoverColor := clBtnHighlight;
 end;
 
 destructor TColorBtn.Destroy;
@@ -78,6 +115,7 @@ begin
    if FColor <> Value then
    begin
       FColor := Value;
+      FActualColor := FColor;
       FParentColor := False;
       Invalidate;
    end;
@@ -105,11 +143,6 @@ end;
 
 procedure TColorBtn.CNDrawItem(var Message: TWMDrawItem);
 var
-   RC: TRect;
-   Flags: Longint;
-   State: TButtonState;
-   IsDown, IsDefault: Boolean;
-   DrawItemStruct: TDrawItemStruct;
    SaveIndex: Integer;
 begin
    with Message.DrawItemStruct^ do
@@ -274,13 +307,13 @@ procedure TColorBtn.WndProc(var Message: TMessage);
 begin
    if (Message.Msg = CM_MOUSELEAVE) then
    begin
-      FColor := FOldColor;
+      FActualColor := FColor;
       invalidate;
    end;
+
    if (Message.Msg = CM_MOUSEENTER) then
    begin
-      FOldColor := FColor;
-      FColor := FHoverColor;
+      FActualColor := HoverColor;
       invalidate;
    end;
 
@@ -296,13 +329,10 @@ begin
    end;
 end;
 
-procedure TColorBtn.SetHoverColor(const Value: TColor);
+function TColorBtn.GetHoverColor: TColor;
 begin
-   if FHoverColor <> Value then
-   begin
-      FHoverColor := Value;
-      Invalidate;
-   end;
+   FHoverColor := LuminanceColor(FColor, 50);
+   Result := FHoverColor;
 end;
 
 procedure TColorBtn.SetParentColor(const Value: Boolean);
@@ -320,33 +350,25 @@ end;
 
 procedure TColorBtn.DrawButton(Rect: TRect; State: UINT);
 var
-   Flags, OldMode: Longint;
+   OldMode: Longint;
    IsDown, IsDefault, IsDisabled: Boolean;
    OldColor: TColor;
    OrgRect: TRect;
 begin
-   OrgRect := Rect;
-   Flags := DFCS_BUTTONPUSH or DFCS_ADJUSTRECT;
-   IsDown := State and ODS_SELECTED <> 0;
+   OrgRect    := Rect;
+   IsDown     := State and ODS_SELECTED <> 0;
    IsDisabled := State and ODS_DISABLED <> 0;
-   IsDefault := State and ODS_FOCUS <> 0;
-
-   if IsDown then
-      Flags := Flags or DFCS_PUSHED;
-   if IsDisabled then
-      Flags := Flags or DFCS_INACTIVE;
+   IsDefault  := State and ODS_FOCUS <> 0;
 
    if IsDown then
    begin
-      FCanvas.Pen.Color := clBtnShadow;
+      FCanvas.Pen.Color := FColor;
       FCanvas.Pen.Width := 1;
-      FCanvas.Brush.Color := clBtnFace;
+      FCanvas.Brush.Color := clNone;
       FCanvas.Rectangle(Rect.Left, Rect.Top, Rect.Right, Rect.Bottom);
       InflateRect(Rect, -1, -1);
+      OffsetRect(Rect, 0, 0);
    end;
-
-   if IsDown then
-      OffsetRect(Rect, 1, 1);
 
    OldColor := FCanvas.Brush.Color;
 
@@ -357,15 +379,15 @@ begin
    end
    else
    begin
-      if FParentColor and (FColor <> FHoverColor) then
+      if FParentColor and (FActualColor <> FHoverColor) then
       begin
          FCanvas.Brush.Color := Parent.Brush.Color;
          FCanvas.Pen.Color := Parent.Brush.Color;
       end
       else
       begin
-         FCanvas.Brush.Color := FColor;
-         FCanvas.Pen.Color := FColor;
+         FCanvas.Brush.Color := FActualColor;
+         FCanvas.Pen.Color := FActualColor;
       end;
    end;
 
@@ -383,7 +405,7 @@ begin
    begin
       Rect := OrgRect;
       InflateRect(Rect, -1, -1);
-      FCanvas.Pen.Color := clWindowFrame;
+      FCanvas.Pen.Color := LuminanceColor(FActualColor, 110);
       FCanvas.Brush.Style := bsClear;
       FCanvas.RoundRect(Rect.Left, Rect.Top, Rect.Right, Rect.Bottom, FRound, FRound);
       InflateRect(Rect, 0, 0);
