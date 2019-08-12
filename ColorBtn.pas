@@ -4,12 +4,14 @@ interface
 
 uses
    Windows, Messages, SysUtils, Classes, Graphics, Controls, Forms, Dialogs,
-   StdCtrls, Buttons, HSLColor;
+   StdCtrls, Buttons, HSLColor,
+   {$IFDEF VER150}pngimage{$ELSE}Vcl.Imaging.pngimage{$ENDIF};
 
 type
    TColorBtn = class(TBitBtn)
    private
       FCanvas: TCanvas;
+      FPicture: TPicture;
       FColor: TColor;
       FRound: Integer;
       FDisableColor: TColor;
@@ -19,18 +21,22 @@ type
       function InvertColor(const Color: TColor): TColor;
       function ColorIsLight(Color: TColor): Boolean;
       function LuminanceColor(Color: TColor; Level: Integer): TColor;
-      function GetIcon(IsDisable: Boolean): TBitmap;     
+      function GetIcon(IsDisable: Boolean): TPicture;
       procedure CNDrawItem(var Message: TWMDrawItem); message CN_DRAWITEM;
       procedure WMLButtonDblClk(var Message: TWMLButtonDblClk); message WM_LBUTTONDBLCLK;
       procedure DrawButtonText(const Caption: string; TRC: TRect; IsDisable: Boolean; BiDiFlags: Longint);
       procedure CalcuateTextPosition(const Caption: string; var TRC: TRect; BiDiFlags: Longint; IsDisable: Boolean);
-   private             
+   private
       IsFocused: boolean;
       procedure SetColor(Value: TColor);
       procedure SetRound(const Value: Integer);
       procedure SetDisableColor(const Value: TColor);
-      procedure SetParentColor(const Value: Boolean);   
+      procedure SetParentColor(const Value: Boolean);
       function GetHoverColor: TColor;
+      procedure SetPicture(const Value: TPicture);
+
+      property Glyph stored False;
+      property NumGlyphs stored False;
    protected
       procedure CreateParams(var Params: TCreateParams); override;
       procedure WndProc(var Message: TMessage); override;
@@ -41,6 +47,7 @@ type
       constructor Create(AOwner: TComponent); override;
       destructor Destroy; override;
    published
+      property Picture: TPicture read FPicture write SetPicture;
       property Color: TColor read FColor write SetColor default clBtnFace;
       property Round: Integer read FRound write SetRound default 0;
       property DisableColor: TColor read FDisableColor write SetDisableColor default clBtnShadow;
@@ -51,25 +58,17 @@ procedure Register;
 
 implementation
 
-{ TColorBtn }  
+{ TColorBtn }
 
 function TColorBtn.InvertColor(const Color: TColor): TColor;
 begin
-    Result :=
-       TColor(
-          Windows.RGB(
-             255 - GetRValue(Color),
-             255 - GetGValue(Color),
-             255 - GetBValue(Color)));
-end;        
+   Result := TColor(Windows.RGB(255 - GetRValue(Color), 255 - GetGValue(Color), 255 - GetBValue(Color)));
+end;
 
 function TColorBtn.ColorIsLight(Color: TColor): Boolean;
 begin
    Color := ColorToRGB(Color);
-   Result :=
-      ((Color and $FF) +
-       (Color shr 8 and $FF) +
-       (Color shr 16 and $FF)) >= $180;
+   Result := ((Color and $FF) + (Color shr 8 and $FF) + (Color shr 16 and $FF)) >= $180;
 end;
 
 function TColorBtn.LuminanceColor(Color: TColor; Level: Integer): TColor;
@@ -90,8 +89,9 @@ constructor TColorBtn.Create(AOwner: TComponent);
 begin
    inherited Create(AOwner);
    FCanvas := TCanvas.Create;
+   FPicture := TPicture.Create;
    FColor := clBtnFace;
-   FActualColor := clBtnFace;
+   FActualColor := FColor;
    GetHoverColor;
    FDisableColor := clBtnShadow;
    FParentColor := True;
@@ -106,6 +106,13 @@ end;
 procedure TColorBtn.CreateParams(var Params: TCreateParams);
 begin
    inherited CreateParams(Params);
+
+   if FParentColor and (Parent <> Nil) then
+   begin
+      FColor := Parent.Brush.Color;
+      FActualColor := FColor;
+   end;
+
    with Params do
       Style := Style or BS_OWNERDRAW;
 end;
@@ -164,11 +171,10 @@ begin
    Message.Result := 1;
 end;
 
-procedure TColorBtn.CalcuateTextPosition(const Caption: string; var TRC: TRect;
-   BiDiFlags: Integer; IsDisable: Boolean);
+procedure TColorBtn.CalcuateTextPosition(const Caption: string; var TRC: TRect; BiDiFlags: Integer; IsDisable: Boolean);
 var
    TB: TRect;
-   xGlyph: TBitmap;
+   xPicture: TPicture;
    xLeft, xRight, xTop, xBottom: Integer;
 begin
    with FCanvas do
@@ -181,75 +187,74 @@ begin
       xTop := 0;
       xBottom := 0;
 
-      xGlyph := GetIcon(IsDisable);
+      xPicture := GetIcon(IsDisable);
 
-      if (xGlyph.Width > 0) or
-         (xGlyph.Height > 0) then
+      if xPicture <> Nil then
       begin
-         xGlyph.Transparent := True;
+         xPicture.Graphic.Transparent := True;
 
          case Layout of
             blGlyphLeft:
                begin
-                  xLeft := xGlyph.Width + TB.Right + 3;
-                  xTop  := ((TRC.Bottom - TRC.Top) - xGlyph.Height) div 2;
+                  xLeft := xPicture.Width + TB.Right + 3;
+                  xTop := ((TRC.Bottom - TRC.Top) - xPicture.Height) div 2;
 
                   if Margin = -1 then
                      xLeft := ((TRC.Right - TRC.Left) - xLeft) div 2
                   else
                      xLeft := Margin + 3;
 
-                  FCanvas.Draw(xLeft, xTop, xGlyph);
-                  xLeft := xLeft + 4 + xGlyph.Width;
-                  xTop  := ((TRC.Bottom - TRC.Top) - TB.Bottom) div 2;
+                  FCanvas.Draw(xLeft, xTop, xPicture.Graphic);
+                  xLeft := xLeft + 4 + xPicture.Width;
+                  xTop := ((TRC.Bottom - TRC.Top) - TB.Bottom) div 2;
                end;
             blGlyphRight:
                begin
-                  xRight  := xGlyph.Width + TB.Right + 3;
-                  xBottom := ((TRC.Bottom - TRC.Top) - xGlyph.Height) div 2;
+                  xRight := xPicture.Width + TB.Right + 3;
+                  xBottom := ((TRC.Bottom - TRC.Top) - xPicture.Height) div 2;
 
                   if Margin = -1 then
                   begin
                      xRight := ((TRC.Right - TRC.Left) - xRight) div 2;
-                     xRight := TRC.Right - (xRight + xGlyph.Width);
+                     xRight := TRC.Right - (xRight + xPicture.Width);
                   end
                   else
-                     xRight := TRC.Right - (Margin + xGlyph.Width);
+                     xRight := TRC.Right - (Margin + xPicture.Width);
 
-                  FCanvas.Draw(xRight, xBottom, xGlyph);
-                  xRight  := xRight - 4 - TB.Right;
+                  FCanvas.Draw(xRight, xBottom, xPicture.Graphic);
+                  xRight := xRight - 4 - TB.Right;
                   xBottom := ((TRC.Bottom - TRC.Top) - TB.Bottom) div 2;
                end;
             blGlyphTop:
                begin
-                  xTop := xGlyph.Height + TB.Bottom + 3;
+                  xTop := xPicture.Height + TB.Bottom + 3;
 
                   if Margin = -1 then
                      xTop := ((TRC.Bottom - TRC.Top) - xTop) div 2
                   else
                      xTop := Margin + 3;
 
-                  xLeft := ((TRC.Right - TRC.Left) - xGlyph.Width) div 2;
+                  xLeft := ((TRC.Right - TRC.Left) - xPicture.Width) div 2;
 
-                  FCanvas.Draw(xLeft, xTop, xGlyph);
-                  xTop := xTop + 4 + xGlyph.Height;
+                  FCanvas.Draw(xLeft, xTop, xPicture.Graphic);
+                  xTop := xTop + 4 + xPicture.Height;
                   xLeft := ((TRC.Right - TRC.Left) - TB.Right) div 2;
                end;
             blGlyphBottom:
                begin
-                  xBottom := xGlyph.Height + TB.Bottom + 3;
+                  xBottom := xPicture.Height + TB.Bottom + 3;
 
                   if Margin = -1 then
                   begin
                      xBottom := ((TRC.Bottom - TRC.Top) - xBottom) div 2;
-                     xBottom := TRC.Bottom - (xBottom + xGlyph.Height);
+                     xBottom := TRC.Bottom - (xBottom + xPicture.Height);
                   end
                   else
-                     xBottom := TRC.Bottom - (Margin + xGlyph.Height);
+                     xBottom := TRC.Bottom - (Margin + xPicture.Height);
 
-                  xRight := ((TRC.Right - TRC.Left) - xGlyph.Width) div 2;
+                  xRight := ((TRC.Right - TRC.Left) - xPicture.Width) div 2;
 
-                  FCanvas.Draw(xRight, xBottom, xGlyph);
+                  FCanvas.Draw(xRight, xBottom, xPicture.Graphic);
                   xBottom := xBottom - 4 - TB.Bottom;
                   xRight := ((TRC.Right - TRC.Left) - TB.Right) div 2;
                end;
@@ -258,7 +263,7 @@ begin
       else
       begin
          xLeft := ((TRC.Right - TRC.Left) - TB.Right) div 2;
-         xTop  := ((TRC.Bottom - TRC.Top) - TB.Bottom) div 2;
+         xTop := ((TRC.Bottom - TRC.Top) - TB.Bottom) div 2;
       end;
 
       OffsetRect(TB, xLeft + xRight + 1, xTop + xBottom);
@@ -280,22 +285,43 @@ begin
    end;
 end;
 
-function TColorBtn.GetIcon(IsDisable: Boolean): TBitmap;
+function TColorBtn.GetIcon(IsDisable: Boolean): TPicture;
 var
-   xRect,
-   xCutRect: TRect;
+   xRect: TRect;
+   {$IFDEF VER150}xPngImage: TPNGObject;{$ELSE}xPngImage: TPngImage;{$ENDIF}
 begin
-   Result := TBitmap.Create;
-   Result.Height := Glyph.Height;
-   Result.Width  := Trunc(Glyph.Width / NumGlyphs);
+   Result := Nil;
 
-   if IsDisable then
-      xRect := Bounds(Result.Width, 0, Result.Width, Result.Height)
+   if FPicture.Graphic = Nil then
+      Exit;
+
+   if FPicture.Graphic is {$IFDEF VER150}TPNGObject{$ELSE}TPngImage{$ENDIF} then
+   begin
+      if IsDisable then
+      begin
+         Result := TPicture.Create;
+         {$IFDEF VER150}
+         xPngImage := TPNGObject.Create;
+         {$ELSE}
+         xPngImage := TPngImage.Create;
+         {$ENDIF}
+         xPngImage.Assign(FPicture.Graphic);
+         GrayScale(xPngImage);
+         Result.Graphic := xPngImage;
+      end
+      else
+         Result := FPicture;
+   end
    else
+   begin
+      Result := TPicture.Create;
+      Result.Graphic := FPicture.Graphic;
+
       xRect := Bounds(0, 0, Result.Width, Result.Height);
 
-   xCutRect := Bounds(0, 0, Result.Width, Result.Height);
-   Result.Canvas.CopyRect(xCutRect, Glyph.Canvas, xRect);
+      if IsDisable then
+         GrayScale(TBitmap(Result.Graphic));
+   end;
 end;
 
 procedure Register;
@@ -305,13 +331,13 @@ end;
 
 procedure TColorBtn.WndProc(var Message: TMessage);
 begin
-   if (Message.Msg = CM_MOUSELEAVE) then
+   if (Message.Msg = CM_MOUSELEAVE) or (Message.Msg = WM_LBUTTONUP) then
    begin
       FActualColor := FColor;
       invalidate;
    end;
 
-   if (Message.Msg = CM_MOUSEENTER) then
+   if (Message.Msg = CM_MOUSEENTER) or (Message.Msg = WM_LBUTTONDOWN) then
    begin
       FActualColor := HoverColor;
       invalidate;
@@ -348,6 +374,12 @@ begin
    end;
 end;
 
+procedure TColorBtn.SetPicture(const Value: TPicture);
+begin
+  FPicture.Assign(Value);
+  Repaint;
+end;
+
 procedure TColorBtn.DrawButton(Rect: TRect; State: UINT);
 var
    OldMode: Longint;
@@ -355,10 +387,10 @@ var
    OldColor: TColor;
    OrgRect: TRect;
 begin
-   OrgRect    := Rect;
-   IsDown     := State and ODS_SELECTED <> 0;
+   OrgRect := Rect;
+   IsDown := State and ODS_SELECTED <> 0;
    IsDisabled := State and ODS_DISABLED <> 0;
-   IsDefault  := State and ODS_FOCUS <> 0;
+   IsDefault := State and ODS_FOCUS <> 0;
 
    if IsDown then
    begin
